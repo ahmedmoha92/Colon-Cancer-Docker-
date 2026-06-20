@@ -1,0 +1,75 @@
+version: "3.9"
+
+# ═══════════════════════════════════════════════════════════════════
+#  Colon Cancer ML Pipeline — Docker Compose
+#
+#  Mode LOCAL  : build les images depuis les Dockerfiles
+#  Mode HUB    : utilise les images depuis Docker Hub
+#               → commenter/décommenter selon le mode voulu
+# ═══════════════════════════════════════════════════════════════════
+
+services:
+
+  # ── 1. ML Training Service ─────────────────────────────────────────────────
+  ml_service:
+
+    # -- Mode LOCAL (build en local) --
+    build:
+      context: ./ml_service
+      dockerfile: Dockerfile
+
+    # -- Mode HUB (image depuis Docker Hub) --
+    # image: ahmedmoha/colon-ml-trainer:latest
+
+    container_name: colon_ml_trainer
+    environment:
+      DATA_PATH: /data/colon_cancer_dataset.csv
+      MODEL_DIR: /models
+      TOP_N: "20"
+    volumes:
+      - ./data:/data:ro
+      - models_volume:/models
+    restart: "no"
+    networks:
+      - cancer_net
+
+  # ── 2. API Service (FastAPI) ──────────────────────────────────────────────
+  api_service:
+
+    # -- Mode LOCAL (build en local) --
+    build:
+      context: ./api_service
+      dockerfile: Dockerfile
+
+    # -- Mode HUB (image depuis Docker Hub) --
+    # image: ahmedmoha/colon-api:latest
+
+    container_name: colon_api
+    depends_on:
+      ml_service:
+        condition: service_completed_successfully
+    environment:
+      MODEL_DIR: /models
+    volumes:
+      - models_volume:/models:ro
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - cancer_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  models_volume:
+    driver: local
+    name: colon_models_volume
+
+networks:
+  cancer_net:
+    driver: bridge
+    name: colon_cancer_network
